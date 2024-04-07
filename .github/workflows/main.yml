@@ -1,0 +1,22 @@
+name: Crawler
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Run the script daily at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  run-bun-script:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4.1.2
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v1
+    - name: Install Dependencies
+      run: bun install
+    - name: Run script
+      run: bun run start
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
