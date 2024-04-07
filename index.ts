@@ -6,7 +6,7 @@ const supabaseKey = process.env.SUPABASE_KEY
 
 if (!supabaseUrl || !supabaseKey) throw new Error('missing env vars SUPABASE_URL or SUPABASE_KEY')
 
-const supabase = createClient(supabaseKey, supabaseUrl);
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * A function to fetch all books from https://letsreadasia.org
