@@ -24,15 +24,20 @@ const s3 = new S3Client({
 });
 
 const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl: string }[]) => {
-  for (const image of images) {
-    console.log(`Storing ${bookId}: page ${image.page}`)
-    const imageRaw = await fetch(image.imageUrl)
-    const imageBuffer = Buffer.from(await imageRaw.arrayBuffer())
-    const webpBuffer = await sharp(imageBuffer).webp().toBuffer();
+  try {
 
-    await s3.putObject(`${bookId}/${image.page}.webp`, webpBuffer);
+    for (const image of images) {
+      console.log(`Storing ${bookId}: page ${image.page}`)
+      const imageRaw = await fetch(image.imageUrl)
+      const imageBuffer = Buffer.from(await imageRaw.arrayBuffer())
+      const webpBuffer = await sharp(imageBuffer).webp().toBuffer();
+
+      await s3.putObject(`${bookId}/${image.page}.webp`, webpBuffer);
+    }
+    console.log('----DONE STORING IMAGES----')
+  } catch (e) {
+    console.log('Skipping due to error...', e)
   }
-  console.log('----DONE STORING IMAGES----')
 }
 
 /**
