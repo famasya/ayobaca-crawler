@@ -12,7 +12,9 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@capgo/s3-lite-client": "^0.1.8",
     "@supabase/supabase-js": "^2.42.0",
+    "sharp": "^0.33.3",
     "string-strip-html": "^13.4.7"
   }
 }

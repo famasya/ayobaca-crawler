@@ -1,23 +1,62 @@
+import { S3Client } from '@capgo/s3-lite-client';
 import { createClient } from '@supabase/supabase-js';
-import { stripHtml } from "string-strip-html";
+import sharp from 'sharp';
+import { stripHtml } from 'string-strip-html';
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_KEY
+const s3Endpoint = process.env.S3_ENDPOINT
+const s3AccessKey = process.env.S3_ACCESS_KEY
+const s3AccessSecret = process.env.S3_ACCESS_SECRET
 
-if (!supabaseUrl || !supabaseKey) throw new Error('missing env vars SUPABASE_URL or SUPABASE_KEY')
+if (!supabaseUrl || !supabaseKey || !s3AccessKey || !s3Endpoint || !s3AccessSecret) throw new Error('missing env vars')
 
 const supabase = createClient(supabaseUrl, supabaseKey);
+const s3 = new S3Client({
+  endPoint: s3Endpoint,
+  port: 443,
+  useSSL: true,
+  region: "apac",
+  bucket: "ayobaca",
+  accessKey: s3AccessKey,
+  secretKey: s3AccessSecret,
+  pathStyle: true,
+});
+
+const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl: string }[]) => {
+  for (const image of images) {
+    console.log(`Storing ${bookId}: page ${image.page}`)
+    const imageRaw = await fetch(image.imageUrl)
+    const imageBuffer = Buffer.from(await imageRaw.arrayBuffer())
+    const webpBuffer = await sharp(imageBuffer).webp().toBuffer();
+
+    await s3.putObject(`${bookId}/${image.page}.webp`, webpBuffer);
+  }
+  console.log('----DONE STORING IMAGES----')
+}
 
 /**
  * A function to fetch all books from https://letsreadasia.org
  * and insert them into supabase. It will be served as cached version official API.
  */
 (async () => {
-  let cursor = '0';
+  let cursor: string | null = '0';
+
+  const { data: existingBooks, error } = await supabase.from('books').select('masterBookId')
+  if (error) throw error;
 
   while (cursor !== null) {
     const requests = await fetch(`https://letsreadasia.org/api/book/elastic/search/?searchText=&lId=6260074016145408&limit=100&cursor=${cursor}`)
     const data = await requests.json() as any;
+    cursor = data.cursorWebSafeString;
+
+    // check if the book is unsynced
+    const unsyncedBooks = data.other.filter((book: any) => !existingBooks.find((b: any) => b.masterBookId === book.masterBookId))
+
+    // if (unsyncedBooks.length === 0) {
+    //   console.log(`All books synced in page ${cursor}. Continue...`)
+    //   continue;
+    // }
 
     for (const book of data.other) {
       // fetch details
@@ -48,7 +87,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
         onConflict: 'masterBookId'
       })
 
-      if (error) throw new Error(error.message)
+      if (error) throw error;
 
       const bookDetail = content.pages.map((page: any) => ({
         bookDetailId: `${page.id}`,
@@ -57,6 +96,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
           .result
           .replace(/[^a-zA-Z0-9]/g, ' ')
           .trim(),
+        contentRaw: page.extractedLongContentValue,
         imageUrl: page.imageUrl,
         pageNum: page.pageNum
       })).reduce((acc: any, current: any) => {
@@ -68,16 +108,24 @@ const supabase = createClient(supabaseUrl, supabaseKey);
         return acc;
       }, [])
 
+      // store images
+      const images = [{ page: 0, imageUrl: content.thumborCoverImageUrl }]
+      bookDetail.map(
+        (b: any) => images.push({ page: b.pageNum, imageUrl: b.imageUrl })
+      )
+      await storeImagesToS3(
+        book.masterBookId,
+        images
+      )
+
       const { error: insertDetailError } = await supabase.from('book_details').upsert(bookDetail, {
         onConflict: 'bookDetailId'
       })
 
-      if (insertDetailError) throw new Error(insertDetailError.message)
+      if (insertDetailError) throw insertDetailError;
     }
 
-    console.log(`---------DONE PAGE ${cursor}---------`)
-
-    cursor = data.cursorWebSafeString
+    console.log(`---------DONE PAGE ${cursor}---------`);
   }
-  console.log("---------DONE ALL---------")
+  console.log("---------DONE ALL---------");
 })()
