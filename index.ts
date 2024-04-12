@@ -24,20 +24,19 @@ const s3 = new S3Client({
 });
 
 const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl: string }[]) => {
-  try {
-
-    for (const image of images) {
+  for (const image of images) {
+    try {
       console.log(`Storing ${bookId}: page ${image.page}`)
       const imageRaw = await fetch(image.imageUrl)
       const imageBuffer = Buffer.from(await imageRaw.arrayBuffer())
       const webpBuffer = await sharp(imageBuffer).webp().toBuffer();
 
       await s3.putObject(`${bookId}/${image.page}.webp`, webpBuffer);
+    } catch (e) {
+      console.log('Skipping due to blank image...')
     }
-    console.log('----DONE STORING IMAGES----')
-  } catch (e) {
-    console.log('Skipping due to error...', e)
   }
+  console.log('----DONE STORING IMAGES----')
 }
 
 /**
@@ -70,6 +69,36 @@ const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl:
         await fetch(`https://letsreadasia.org/api/v5/book/preview/language/6260074016145408/book/${book.masterBookId}`)
       ).json() as any;
 
+      let pageNum = 1;
+      const details: any = []
+      const images = [{ page: 0, imageUrl: content.thumborCoverImageUrl }]
+      for (const page of content.pages) {
+        if (page.imageUrl === "") {
+          continue;
+        }
+
+        // find duplicates
+        if (details.find((d: any) => d.bookDetailId === page.bookDetailId)) {
+          continue;
+        }
+
+        details.push({
+          bookDetailId: `${page.id}`,
+          bookId: book.masterBookId,
+          content: stripHtml(page.extractedLongContentValue.toLowerCase())
+            .result
+            .replace(/[^a-zA-Z0-9]/g, ' ')
+            .trim(),
+          contentRaw: page.extractedLongContentValue,
+          imageUrl: page.imageUrl,
+          pageNum: pageNum
+        })
+
+        images.push({ page: pageNum, imageUrl: page.imageUrl })
+        pageNum += 1;
+      }
+
+      // save book
       const { error } = await supabase.from('books').upsert({
         name: book.name,
         authors: content
@@ -83,7 +112,7 @@ const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl:
         readingLevel: Number.parseInt(book.readingLevel),
         languageId: book.languageId,
         masterBookId: book.masterBookId,
-        totalPages: book.totalPages,
+        totalPages: pageNum - 1,
         tags: book.tags
           .map((tag: any) => ({ id: tag.id, name: tag.name })),
         availableLanguages: book.availableLanguages
@@ -91,39 +120,16 @@ const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl:
       }, {
         onConflict: 'masterBookId'
       })
-
       if (error) throw error;
 
-      const bookDetail = content.pages.map((page: any) => ({
-        bookDetailId: `${page.id}`,
-        bookId: book.masterBookId,
-        content: stripHtml(page.extractedLongContentValue.toLowerCase())
-          .result
-          .replace(/[^a-zA-Z0-9]/g, ' ')
-          .trim(),
-        contentRaw: page.extractedLongContentValue,
-        imageUrl: page.imageUrl,
-        pageNum: page.pageNum
-      })).reduce((acc: any, current: any) => {
-        // remove duplicates
-        const filtered = acc.find((item: any) => item.bookDetailId === current.bookDetailId)
-        if (filtered === undefined) {
-          return [...acc, current]
-        }
-        return acc;
-      }, [])
-
-      // store images
-      const images = [{ page: 0, imageUrl: content.thumborCoverImageUrl }]
-      bookDetail.map(
-        (b: any) => images.push({ page: b.pageNum, imageUrl: b.imageUrl })
-      )
+      // fetch images
       await storeImagesToS3(
         book.masterBookId,
         images
       )
 
-      const { error: insertDetailError } = await supabase.from('book_details').upsert(bookDetail, {
+      // save book details
+      const { error: insertDetailError } = await supabase.from('book_details').upsert(details, {
         onConflict: 'bookDetailId'
       })
 
