@@ -44,7 +44,7 @@ const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl:
  * and insert them into supabase. It will be served as cached version official API.
  */
 (async () => {
-  let cursor: string | null = '4';
+  let cursor: string | null = '0';
 
   const { data: existingBooks, error } = await supabase.from('books').select('masterBookId')
   if (error) throw error;
@@ -57,10 +57,10 @@ const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl:
     // check if the book is unsynced
     const unsyncedBooks = data.other.filter((book: any) => !existingBooks.find((b: any) => b.masterBookId === book.masterBookId))
 
-    // if (unsyncedBooks.length === 0) {
-    //   console.log(`All books synced in page ${cursor}. Continue...`)
-    //   continue;
-    // }
+    if (unsyncedBooks.length === 0) {
+      console.log(`All books synced in page ${cursor}. Continue...`)
+      continue;
+    }
 
     for (const book of data.other) {
       // fetch details
