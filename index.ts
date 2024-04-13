@@ -78,7 +78,7 @@ const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl:
         }
 
         // find duplicates
-        if (details.find((d: any) => d.bookDetailId === page.bookDetailId)) {
+        if (details.find((d: any) => d.bookDetailId === page.id.toString())) {
           continue;
         }
 
