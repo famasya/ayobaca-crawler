@@ -44,7 +44,7 @@ const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl:
  * and insert them into supabase. It will be served as cached version official API.
  */
 (async () => {
-  let cursor: string | null = '0';
+  let cursor: string | null = '4';
 
   const { data: existingBooks, error } = await supabase.from('books').select('masterBookId')
   if (error) throw error;
