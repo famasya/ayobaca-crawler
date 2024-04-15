@@ -23,15 +23,15 @@ const s3 = new S3Client({
   pathStyle: true,
 });
 
-const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl: string }[]) => {
+const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl: string }[], cover = false) => {
   for (const image of images) {
     try {
-      console.log(`Storing ${bookId}: page ${image.page}`)
+      console.log(`Storing ${bookId}: page ${image.page} ${cover ? 'cover' : image.page}.webp...`)
       const imageRaw = await fetch(image.imageUrl)
       const imageBuffer = Buffer.from(await imageRaw.arrayBuffer())
       const webpBuffer = await sharp(imageBuffer).webp().toBuffer();
 
-      await s3.putObject(`${bookId}/${image.page}.webp`, webpBuffer);
+      await s3.putObject(`${bookId}/${cover ? 'cover' : image.page}.webp`, webpBuffer);
     } catch (e) {
       console.log('Skipping due to blank image...')
     }
@@ -121,6 +121,9 @@ const storeImagesToS3 = async (bookId: string, images: { page: number, imageUrl:
         onConflict: 'masterBookId'
       })
       if (error) throw error;
+
+      // save book cover
+      await storeImagesToS3(book.masterBookId, [{ page: 0, imageUrl: content.coverImageUrl }], true)
 
       // fetch images
       await storeImagesToS3(
